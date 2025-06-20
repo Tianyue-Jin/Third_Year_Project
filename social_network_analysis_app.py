@@ -421,22 +421,49 @@ def randomized_rumour_blocking(G, num_nodes):
 
 
 def hybrid_blocking(G, num_nodes):
-    """Combines Degree, Betweenness, and Community-based blocking for a balanced approach."""
+    """
+    Combines degree, betweenness, and community-based blocking.
+    Guarantees exactly `num_nodes` are returned by padding if needed.
+    """
+    num_per_strategy = max(1, num_nodes // 3)
 
-    num_per_strategy = max(
-        1, num_nodes // 3
-    )  # Evenly distribute across three strategies
+    # Strategy 1: High Degree
+    high_degree_nodes = [node for node, _ in sorted(G.degree(), key=lambda x: x[1], reverse=True)]
 
-    high_degree_nodes = determine_nodes_to_block(G, "Highest Degree", num_per_strategy)
-    betweenness_nodes = determine_nodes_to_block(
-        G, "Highest Betweenness Centrality", num_per_strategy
-    )
-    community_nodes = determine_nodes_to_block(
-        G, "Community-Based Blocking", num_per_strategy
-    )
+    # Strategy 2: Betweenness Centrality
+    betweenness_nodes = [node for node, _ in sorted(nx.betweenness_centrality(G).items(), key=lambda x: x[1], reverse=True)]
 
-    hybrid_set = set(high_degree_nodes + betweenness_nodes + community_nodes)
-    return list(hybrid_set)[:num_nodes]  # Ensure final selection size matches num_nodes
+    # Strategy 3: Community-Based
+    try:
+        communities = list(nx.algorithms.community.greedy_modularity_communities(G))
+        largest_community = max(communities, key=len)
+        community_nodes = sorted(largest_community, key=lambda n: G.degree(n), reverse=True)
+    except Exception:
+        community_nodes = []
+
+    # Combine top nodes from each
+    combined = []
+    seen = set()
+
+    for strategy_nodes in [high_degree_nodes, betweenness_nodes, community_nodes]:
+        for node in strategy_nodes:
+            if node not in seen:
+                combined.append(node)
+                seen.add(node)
+            if len(combined) >= num_nodes:
+                return combined[:num_nodes]
+
+    # Still not enough? Pad with remaining nodes from graph
+    for node in G.nodes():
+        if node not in seen:
+            combined.append(node)
+            seen.add(node)
+        if len(combined) >= num_nodes:
+            break
+
+    return combined[:num_nodes]
+
+
 
 
 # Function to determine nodes to block based on strategy
